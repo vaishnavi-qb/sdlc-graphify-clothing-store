@@ -4,22 +4,42 @@ import { useNavigate, Link } from 'react-router-dom'
 import { X, AlertCircle } from 'lucide-react'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
-import { removeFromCart, updateQuantity, setCart } from '../store/cartSlice' 
+import {
+  removeFromCart,
+  updateQuantity,
+  setCart,
+  toggleItemSelection,
+  selectAllItems,
+  clearItemSelection,
+  getItemKey,
+  selectSelectedItems,
+  selectSelectedAmount,
+  selectAreAllItemsSelected,
+} from '../store/cartSlice'
 import '../styles/Cart.scss'
 import api from '../services/axios'
 
 const Cart = () => {
   const [promoCode, setPromoCode] = useState('')
-  const [editingItem, setEditingItem] = useState(null) 
-  const [tempQuantities, setTempQuantities] = useState({}) 
+  const [editingItem, setEditingItem] = useState(null)
+  const [tempQuantities, setTempQuantities] = useState({})
+  const [checkoutError, setCheckoutError] = useState('')
   const dispatch = useDispatch()
   const navigate = useNavigate()
-  
-  const { isAuthenticated } = useSelector(state => state.auth)
-  const { items, totalAmount } = useSelector(state => state.cart)
 
-  const shippingFee = 0 
-  const total = totalAmount + shippingFee
+  const { isAuthenticated } = useSelector((state) => state.auth)
+  const { items, selectedKeys } = useSelector((state) => state.cart)
+  const selectedItems = useSelector(selectSelectedItems)
+  const selectedAmount = useSelector(selectSelectedAmount)
+  const allSelected = useSelector(selectAreAllItemsSelected)
+
+  const shippingFee = 0
+  const total = selectedAmount + shippingFee
+
+  const isItemSelected = (item) => {
+    if (selectedKeys == null) return true
+    return selectedKeys.includes(getItemKey(item))
+  }
 
   useEffect(() => {
     const fetchCart = async () => {
@@ -27,16 +47,21 @@ const Cart = () => {
         try {
           const response = await api.get('/cart')
           console.log('Fetched cart items:', response.data)
-          
-          // Backend returns: { cartItems, itemsPrice, shippingPrice, totalPrice }
+
           const cartItems = response.data.cartItems || []
+          // Keep the in-memory cart when the API returns an empty list so
+          // locally staged / preloaded items (and their selection) are not wiped.
+          if (cartItems.length === 0) {
+            return
+          }
+
           const totalAmount = response.data.itemsPrice || 0
           const totalQuantity = cartItems.reduce((acc, item) => acc + item.qty, 0)
 
           const dbCartData = {
             items: cartItems,
             totalAmount: totalAmount,
-            totalQuantity: totalQuantity
+            totalQuantity: totalQuantity,
           }
 
           dispatch(setCart(dbCartData))
@@ -44,14 +69,14 @@ const Cart = () => {
           console.error('Failed to fetch cart:', error)
         }
       }
-    };
+    }
 
     fetchCart()
   }, [isAuthenticated, dispatch])
 
   const handleRemoveItem = async (product, size) => {
     dispatch(removeFromCart({ product, size }))
-    
+
     console.log('Removing item from cart:', { product, size })
     if (isAuthenticated) {
       try {
@@ -64,11 +89,10 @@ const Cart = () => {
 
   const handleQuantityChange = async (product, size, newQuantity) => {
     if (newQuantity > 0) {
-      // Storing the change temporarily and mark this item as being edited
       const itemKey = `${product}-${size}`
-      setTempQuantities(prev => ({
+      setTempQuantities((prev) => ({
         ...prev,
-        [itemKey]: newQuantity
+        [itemKey]: newQuantity,
       }))
       setEditingItem(itemKey)
     }
@@ -91,7 +115,7 @@ const Cart = () => {
     }
 
     setEditingItem(null)
-    setTempQuantities(prev => {
+    setTempQuantities((prev) => {
       const updated = { ...prev }
       delete updated[itemKey]
       return updated
@@ -100,13 +124,27 @@ const Cart = () => {
 
   const handleCancelQuantity = (product, size) => {
     const itemKey = `${product}-${size}`
-    
+
     setEditingItem(null)
-    setTempQuantities(prev => {
+    setTempQuantities((prev) => {
       const updated = { ...prev }
       delete updated[itemKey]
       return updated
     })
+  }
+
+  const handleToggleItem = (item) => {
+    setCheckoutError('')
+    dispatch(toggleItemSelection(getItemKey(item)))
+  }
+
+  const handleSelectAllChange = (event) => {
+    setCheckoutError('')
+    if (event.target.checked) {
+      dispatch(selectAllItems())
+    } else {
+      dispatch(clearItemSelection())
+    }
   }
 
   const handleCheckout = () => {
@@ -114,6 +152,11 @@ const Cart = () => {
       navigate('/login')
       return
     }
+    if (selectedItems.length === 0) {
+      setCheckoutError('Please select at least one item to proceed to checkout.')
+      return
+    }
+    setCheckoutError('')
     navigate('/checkout')
   }
 
@@ -142,9 +185,21 @@ const Cart = () => {
         ) : (
           <div className="cart-content">
             <div className="cart-table-wrapper">
+              <div className="cart-select-all">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={handleSelectAllChange}
+                    aria-label="Select all items"
+                  />
+                  Select All
+                </label>
+              </div>
               <table className="cart-table">
                 <thead>
                   <tr>
+                    <th>Select</th>
                     <th>Products</th>
                     <th>Title</th>
                     <th>Price</th>
@@ -155,12 +210,20 @@ const Cart = () => {
                 </thead>
                 <tbody>
                   {items.map((item) => {
-                    const itemKey = `${item.product}-${item.size}`
+                    const itemKey = getItemKey(item)
                     const isEditing = editingItem === itemKey
                     const displayQty = isEditing ? tempQuantities[itemKey] : item.qty
-                    
+
                     return (
                       <tr key={itemKey}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={isItemSelected(item)}
+                            onChange={() => handleToggleItem(item)}
+                            aria-label={`Select ${item.name}`}
+                          />
+                        </td>
                         <td>
                           <div className="product-image-cell">
                             <img src={item.image} alt={item.name} />
@@ -227,14 +290,13 @@ const Cart = () => {
               </table>
             </div>
 
-            {/* Cart Summary */}
             <div className="cart-summary-wrapper">
               <div className="cart-totals">
                 <h2>Cart Totals</h2>
 
                 <div className="totals-row">
                   <span>Subtotal</span>
-                  <span className="amount">${totalAmount.toFixed(2)}</span>
+                  <span className="amount">{`$${selectedAmount.toFixed(2)}`}</span>
                 </div>
 
                 <div className="totals-row">
@@ -244,8 +306,14 @@ const Cart = () => {
 
                 <div className="totals-row total">
                   <span>Total</span>
-                  <span className="amount">${total.toFixed(2)}</span>
+                  <span className="amount amount-total">{total.toFixed(2)}</span>
                 </div>
+
+                {checkoutError && (
+                  <p className="checkout-validation-error" role="alert">
+                    {checkoutError}
+                  </p>
+                )}
 
                 <button className="checkout-btn" onClick={handleCheckout}>
                   PROCEED TO CHECKOUT

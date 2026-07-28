@@ -7,6 +7,7 @@ import Footer from '../components/Footer'
 import '../styles/Checkout.scss'
 import api from '../services/axios'
 import { loadStripe } from '@stripe/stripe-js'
+import { selectSelectedItems, selectSelectedAmount } from '../store/cartSlice'
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
 
@@ -17,7 +18,9 @@ const normalizeAddress = (address) => ({
 
 const Checkout = () => {
     const navigate = useNavigate()
-    const { items, totalAmount } = useSelector(state => state.cart)
+    const { items } = useSelector(state => state.cart)
+    const checkoutItems = useSelector(selectSelectedItems)
+    const selectedAmount = useSelector(selectSelectedAmount)
     const { isAuthenticated } = useSelector(state => state.auth)
 
     const initialFormState = {
@@ -88,7 +91,7 @@ const Checkout = () => {
 
     const selectedShippingFee = shippingFees[formData.shippingMethod]
     const taxRate = 0.075
-    const subtotal = totalAmount
+    const subtotal = selectedAmount
     const tax = subtotal * taxRate
     const total = subtotal + selectedShippingFee + tax
 
@@ -159,7 +162,7 @@ const Checkout = () => {
             }
 
             const response = await api.post('/payments/create-checkout-session', {
-                items,
+                items: checkoutItems,
                 shippingDetails: formData,
                 orderSummary: {
                     subtotal,
@@ -184,7 +187,7 @@ const Checkout = () => {
         }
     }
 
-    if (items.length === 0) {
+    if (items.length === 0 || checkoutItems.length === 0) {
         return (
             <div className="checkout-page">
                 <Navbar />
@@ -435,7 +438,7 @@ const Checkout = () => {
                         </div>
 
                         <div className="products-list">
-                            {items.map((item, index) => (
+                            {checkoutItems.map((item, index) => (
                                 <div key={`${item.product}-${item.size}`} className="summary-product">
                                     <div className="product-info">
                                         <span className="product-number">{index + 1}.</span>
@@ -457,7 +460,7 @@ const Checkout = () => {
 
                         <div className="summary-totals">
                             <div className="total-items">
-                                Total Items: {items.reduce((acc, item) => acc + item.qty, 0)}
+                                Total Items: {checkoutItems.reduce((acc, item) => acc + item.qty, 0)}
                             </div>
 
                             <div className="total-row">

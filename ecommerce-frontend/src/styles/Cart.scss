@@ -93,6 +93,25 @@
     overflow-x: auto;
   }
 
+  .cart-select-all {
+    margin-bottom: 1rem;
+
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 600;
+      color: #333;
+      cursor: pointer;
+    }
+  }
+
+  .checkout-validation-error {
+    color: #b00020;
+    margin: 0 0 1rem;
+    font-size: 0.95rem;
+  }
+
   .cart-table {
     width: 100%;
     border-collapse: collapse;
@@ -297,6 +316,10 @@
       .amount {
         font-weight: 600;
         color: #333;
+
+        &.amount-total::before {
+          content: '$';
+        }
       }
     }
 
